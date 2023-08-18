@@ -9,21 +9,17 @@ import (
 	"gopkg.in/resty.v1"
 )
 
-type Container_Root struct {
-	Container Container `json:"container"`
-}
-
-type Container struct {
-	Mirror1 Mirror `json:"mirror_1"`
-}
-
 type Mirror struct {
 	Links  []string `json:"links"`
 	Backup []string `json:"backup"`
 }
 
-func GetContainerContents(rc *resty.Client, token string, id string) (*Container_Root, error) {
-	var GCC_Ret Container_Root
+type MirrorContainer struct {
+	Mirrors map[string]Mirror `json:"container"`
+}
+
+func GetContainerContents(rc *resty.Client, token string, id string) (*MirrorContainer, error) {
+	var GCC_Ret MirrorContainer
 
 	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=info&container_id=%s", token, id))
 	if err != nil {
@@ -39,24 +35,34 @@ func GetContainerContents(rc *resty.Client, token string, id string) (*Container
 		return nil, err
 	}
 
-	if fc_err.State == 0 {
+	if fc_err.State == 0 && len(fc_err.Error) > 0 {
 		return nil, errors.New(fc_err.Error)
 	}
 
 	return &GCC_Ret, nil
 }
 
-func EditContainer(rc *resty.Client, token string, container_id string, links []string) error {
+func EditContainer(rc *resty.Client, token string, container_id string, mirror_type string, links []string) error {
 
 	queryValues := url.Values{}
 
 	for i, mirror := range links {
-		queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", i), mirror)
+
+		if mirror_type == "mirror_1" { // ddl
+			queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", i), mirror)
+			continue
+		}
+		if mirror_type == "mirror_2" { // rapidgator
+			queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", i), mirror)
+			continue
+		}
+
+		if i < len(links)-1 {
+			return errors.New("invalid_mirror_type_edit")
+		}
 	}
 
-	queryString := queryValues.Encode()
-
-	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=editV2&container_id=%s&%s", token, container_id, queryString))
+	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=editV2&container_id=%s&%s", token, container_id, queryValues.Encode()))
 	if err != nil {
 		return err
 	}
