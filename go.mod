@@ -3,6 +3,7 @@ module reupperium
 go 1.20
 
 require (
+	github.com/google/uuid v1.3.0
 	github.com/mattn/go-colorable v0.1.13
 	gopkg.in/resty.v1 v1.12.0
 )

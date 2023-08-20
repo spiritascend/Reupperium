@@ -17,6 +17,12 @@ type Config struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 		Token    string `json:"token"`
+		Cookie   struct {
+			Lang     string `json:"Lang"`
+			UserInfo string `json:"UserInfo"`
+			Session  string `json:"Session"`
+			Token    string `json:"Token"`
+		} `json:"cookie"`
 	} `json:"RapidGator"`
 }
 
@@ -76,21 +82,23 @@ func calculateMD5(filePath string, bufferSize int) (string, error) {
 		}
 		hash.Write(buffer[:n])
 	}
+
 	return fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
 
-func GetFileInfo(filepath string) (string, int64, error) {
+func GetFileInfo(filepath string) (string, string, int64, error) {
 	fileInfo, err := os.Stat(filepath)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 
 	filesize := fileInfo.Size()
+
 	hash, err := calculateMD5(filepath, int(filesize/10))
 
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 
-	return hash, filesize, nil
+	return fileInfo.Name(), hash, filesize, nil
 }
