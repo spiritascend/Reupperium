@@ -127,6 +127,15 @@ func UploadFileSafe(rc *resty.Client, token string, fp string) (string, error) {
 	if fileinfo.Result[0].Size != fmt.Sprint(filestat.Size()) {
 		return "", errors.New("sizemismatch_ddl")
 	}
+	stat, err := file.Stat()
+
+	if err != nil {
+		return "", err
+	}
+
+	if UFResp[0].File_size != int(stat.Size()) {
+		return "", errors.New("uploadfailed_ddl_filesizemismatch")
+	}
 
 	return fmt.Sprintf("https://ddownload.com/%s?%s", UFResp[0].File_code, filepath.Base(fp)), nil
 }

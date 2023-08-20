@@ -1,21 +1,17 @@
 package rapidgator
 
-import (
-	"fmt"
-
-	"gopkg.in/resty.v1"
-)
+import "gopkg.in/resty.v1"
 
 func Initialize(rc *resty.Client) (string, error) {
+	/*
+		url, err := UploadFile(rc, "C:\\Users\\JB\\Downloads\\SteelSeriesGG44.0.0Setup.exe")
 
-	deleted, err := FilesDeleted(rc, []string{"75fe1a0043dc60d4605dfb5ac10b9c1b"})
+		if err != nil {
+			Log_Error(err.Error())
+		}
 
-	if err != nil {
-		fmt.Println(err)
-		return "", err
-	}
-
-	fmt.Println(deleted)
+		Log("Upload URL: " + url)
+	*/
 
 	return "", nil
 }

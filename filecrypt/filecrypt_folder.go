@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reupperium/utils"
 
 	"gopkg.in/resty.v1"
 )
@@ -21,28 +22,35 @@ type Folder struct {
 	Containers map[string]Folder_Container `json:"container,omitempty"`
 }
 
-func GetContainers(rc *resty.Client, token string) (*Folder, error) {
+func GetContainers(rc *resty.Client) (Folder, error) {
+	config, err := utils.GetConfig()
+
+	if err != nil {
+		return Folder{}, err
+	}
+
 	var GCRet Folder
-	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=myfolder", token))
+
+	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=myfolder", config.Filecrypttoken))
 
 	if err != nil {
 		Log_Error(err.Error())
-		return nil, err
+		return Folder{}, err
 	}
 
 	if err := json.Unmarshal(resp.Body(), &GCRet); err != nil {
 		Log_Error(err.Error())
-		return nil, err
+		return Folder{}, err
 	}
 
 	var fc_err filecrypt_error
 	if err := json.Unmarshal(resp.Body(), &fc_err); err != nil {
-		return nil, err
+		return Folder{}, err
 	}
 
 	if fc_err.State == 0 {
-		return nil, errors.New(fc_err.Error)
+		return Folder{}, errors.New(fc_err.Error)
 	}
 
-	return &GCRet, nil
+	return GCRet, nil
 }

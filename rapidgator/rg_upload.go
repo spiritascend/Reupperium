@@ -171,6 +171,13 @@ func UploadFile(rc *resty.Client, filepath string) (string, error) {
 		}
 
 		if len(id) > 0 {
+			fileinfo, err := GetFileInfo(rc, id)
+			if err != nil {
+				return "", err
+			}
+			if fileinfo.Response.File.Size != int(filesize) {
+				return "", errors.New("rapidgator_upload error: upload size mismatch")
+			}
 			return url, nil
 		}
 		time.Sleep(1000)

@@ -45,6 +45,52 @@ type FolderResp struct {
 	Details any `json:"details"`
 }
 
+type FileInfoResp struct {
+	Response struct {
+		File struct {
+			FileID    string `json:"file_id"`
+			Mode      int    `json:"mode"`
+			ModeLabel string `json:"mode_label"`
+			FolderID  string `json:"folder_id"`
+			Name      string `json:"name"`
+			Hash      string `json:"hash"`
+			Size      int    `json:"size"`
+			Created   int    `json:"created"`
+			URL       string `json:"url"`
+		} `json:"file"`
+	} `json:"response"`
+	Status  int `json:"status"`
+	Details any `json:"details"`
+}
+
+func GetFileInfo(rc *resty.Client, fileid string) (FileInfoResp, error) {
+	var Ret FileInfoResp
+	tkn, err := GetToken(rc)
+
+	if err != nil {
+		return FileInfoResp{}, err
+	}
+
+	url := fmt.Sprintf("https://rapidgator.net/api/v2/file/info?file_id=%s&token=%s", fileid, tkn)
+	resp, err := rc.R().Get(url)
+
+	if err != nil {
+		return FileInfoResp{}, err
+	}
+
+	err = json.Unmarshal(resp.Body(), &Ret)
+
+	if err != nil {
+		return FileInfoResp{}, err
+	}
+
+	if Ret.Status != 200 {
+		return FileInfoResp{}, errors.New("rapidgator_getfileinfo error: request didn't respond with status code 200")
+	}
+
+	return Ret, nil
+}
+
 func FolderFilesExist(array []FolderFile, target string) bool {
 
 	for i := 0; i < len(array); i++ {
