@@ -1,13 +1,16 @@
 package ddl
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
+	"path"
 	"path/filepath"
-	"time"
+	"reupperium/utils"
 
 	"gopkg.in/resty.v1"
 )
@@ -62,27 +65,8 @@ func GetServer(rc *resty.Client, token string) (string, string, error) {
 	return GSResp.Result, GSResp.SessID, nil
 }
 
-func UploadFileSafe(rc *resty.Client, token string, fp string) (string, error) {
-
-	file, err := os.OpenFile(fp, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-
-	if err != nil {
-		return "", err
-	}
-
-	// Change Hash
-	timestamp := time.Now().Unix()
-	timestampBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(timestampBytes, uint32(timestamp))
-
-	_, err = file.Write(timestampBytes)
-	if err != nil {
-		return "", err
-	}
-
-	file.Close()
-
-	file, err = os.Open(fp)
+func UploadFileSafe(rc *resty.Client, httpclient *http.Client, token string, fp string) (string, error) {
+	file, err := os.Open(fp)
 	if err != nil {
 		return "", err
 	}
@@ -96,17 +80,55 @@ func UploadFileSafe(rc *resty.Client, token string, fp string) (string, error) {
 		return "", err
 	}
 
-	var UFResp UploadFile_Resp
-	resp, err := rc.R().
-		SetFileReader("file", UploadFile_SanitizeFileName(filepath.Base(fp)), file).
-		SetFormData(map[string]string{"sess_id": sid}).
-		Post(serverurl)
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
 
+	go func() {
+		defer pw.Close()
+		fieldWriter, err := writer.CreateFormField("sess_id")
+		if err != nil {
+			fmt.Println("Error creating sess_id field:", err)
+			return
+		}
+		io.WriteString(fieldWriter, sid)
+		partWriter, err := writer.CreateFormFile("file", fp)
+		if err != nil {
+			fmt.Println("Error creating form file:", err)
+			return
+		}
+		_, err = io.Copy(partWriter, file)
+		if err != nil {
+			fmt.Println("Error copying file data:", err)
+			return
+		}
+
+		writer.Close()
+	}()
+
+	request, err := http.NewRequest("POST", serverurl, pr)
 	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return "", err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Using the http library because restyv2 doesn't support this type of request with a file streaming
+
+	response, err := httpclient.Do(request)
+	if err != nil {
+		fmt.Println("Error sending request:", err)
+		return "", err
+	}
+	defer response.Body.Close()
+
+	respbody, err := io.ReadAll(response.Body)
+	if err != nil {
+		fmt.Println("Error reading response:", err)
 		return "", err
 	}
 
-	if err = json.Unmarshal(resp.Body(), &UFResp); err != nil {
+	var UFResp UploadFile_Resp
+	if err = json.Unmarshal(respbody, &UFResp); err != nil {
 		return "", err
 	}
 
@@ -133,16 +155,22 @@ func UploadFileSafe(rc *resty.Client, token string, fp string) (string, error) {
 		return "", err
 	}
 
-	if UFResp[0].File_size != int(stat.Size()) {
-		return "", errors.New("uploadfailed_ddl_filesizemismatch")
+	if fileinfo.Result[0].Size != fmt.Sprint(stat.Size()) {
+		return "", fmt.Errorf("uploadfailed_ddl_filesizemismatch LocalSize %d, Uploaded Size %s", stat.Size(), fileinfo.Result[0].Size)
 	}
-
+	Log("Uploaded File: " + path.Base(fp))
 	return fmt.Sprintf("https://ddownload.com/%s?%s", UFResp[0].File_code, filepath.Base(fp)), nil
 }
 
-func UploadFile(rc *resty.Client, tokens []string, fp string) (string, error) {
-	for tkn := range tokens {
-		url, err := UploadFileSafe(rc, tokens[tkn], fp)
+func UploadFile(rc *resty.Client, httpclient *http.Client, fp string) (string, error) {
+	config, err := utils.GetConfig()
+
+	if err != nil {
+		return "", err
+	}
+
+	for tkn := range config.Ddltokens {
+		url, err := UploadFileSafe(rc, httpclient, config.Ddltokens[tkn], fp)
 
 		if err != nil {
 			if err.Error() == "uploadfailed_ddl_diskspacequotamax" {

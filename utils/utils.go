@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/json"
 	"errors"
@@ -8,10 +9,34 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
-	"sync"
+	"regexp"
+
+	"golang.org/x/sys/windows/registry"
 )
+
+func GetWindowsProxy() (string, error) {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.READ)
+	if err != nil {
+		return "", err
+	}
+	defer k.Close()
+
+	proxyServer, _, err := k.GetStringValue("ProxyServer")
+	if err != nil {
+		return "", err
+	}
+
+	regexPattern := `[a-z]+=([0-9.:]+)`
+
+	re := regexp.MustCompile(regexPattern)
+	matches := re.FindAllStringSubmatch(proxyServer, -1)
+
+	if len(matches) > 0 && len(matches[0]) > 1 {
+		return matches[0][1], nil
+	}
+
+	return "", nil
+}
 
 type Config struct {
 	Filecrypttoken string   `json:"filecrypttoken"`
@@ -27,7 +52,10 @@ type Config struct {
 			Token    string `json:"Token"`
 		} `json:"cookie"`
 	} `json:"RapidGator"`
-	RootPath string `json:"RootPath"`
+	MediaPaths                 []string `json:"MediaPaths"`
+	MaxCopyRetries             int      `json:"MaxCopyRetries"`
+	MaxConcurrentFilesUpload   int      `json:"MaxConcurrentFilesUpload"`
+	MaxConcurrentFoldersUpload int      `json:"MaxConcurrentFoldersUpload"`
 }
 
 func GetConfig() (Config, error) {
@@ -99,91 +127,99 @@ func GetFileInfo(filepath string) (string, string, int64, error) {
 	return fileInfo.Name(), hash, filesize, nil
 }
 
-func copyFile(src, dst string, wg *sync.WaitGroup, errChan chan<- error) {
-	defer wg.Done()
+func ExtractDirectoryName(fullDirPath string) (string, error) {
+	regex := regexp.MustCompile(`[^\\]+$`)
 
+	match := regex.FindString(fullDirPath)
+	if match == "" {
+		return "", errors.New("directory name not found")
+	}
+	return match, nil
+}
+
+func copyFile(src, dst string) error {
 	sourceFile, err := os.Open(src)
 	if err != nil {
-		errChan <- err
-		return
+		return err
 	}
 	defer sourceFile.Close()
 
 	destFile, err := os.Create(dst)
 	if err != nil {
-		errChan <- err
-		return
+		return err
 	}
 	defer destFile.Close()
 
 	_, err = io.Copy(destFile, sourceFile)
-	if err != nil {
-		errChan <- err
-		return
-	}
-
-	oldhash, err := calculateMD5(src)
-	if err != nil {
-		errChan <- err
-		return
-	}
-
-	newhash, err := calculateMD5(dst)
-	if err != nil {
-		errChan <- err
-		return
-	}
-
-	if oldhash != newhash {
-		errChan <- fmt.Errorf("file_copy_hash_mismatch oldhash: %s | newhash: %s", oldhash, newhash)
-	}
+	return err
 }
 
-func CopyAll() (string, error) {
-
-	config, err := GetConfig()
-
-	if err != nil {
-		return "", err
-	}
-
-	cd, err := os.Getwd()
-
-	if err != nil {
-		return "", err
-	}
-
-	tempDir, err := os.MkdirTemp(cd, "temp")
-	if err != nil {
-		return "", err
-	}
-
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1)
-
-	err = filepath.Walk(config.RootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".rar") {
-			wg.Add(1)
-			go copyFile(path, filepath.Join(tempDir, info.Name()), &wg, errChan)
-		}
-		return nil
-	})
-
-	if err != nil {
-		return "", err
-	} else {
-		wg.Wait()
-		close(errChan)
-		for err := range errChan {
-			if err != nil {
-				return "", err
+func CopyFileWithRetryAndVerification(src, dst string, maxRetries int) error {
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err := copyFile(src, dst)
+		if err == nil {
+			if err := compareFileContents(src, dst); err == nil {
+				return nil
+			} else {
+				fmt.Printf("Attempt %d: Copied file contents do not match\n", attempt)
 			}
-			fmt.Println(err)
+		} else {
+			fmt.Printf("Attempt %d failed: %s\n", attempt, err)
 		}
-		return tempDir, nil
 	}
+
+	return fmt.Errorf("exceeded maximum retries")
+}
+
+func compareFileContents(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Open(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	sourceBuffer := make([]byte, 5)
+	destBuffer := make([]byte, 5)
+
+	_, err = sourceFile.Read(sourceBuffer)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	_, err = destFile.Read(destBuffer)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	_, err = sourceFile.Seek(-5, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
+	_, err = destFile.Seek(-5, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
+	_, err = sourceFile.Read(sourceBuffer)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	_, err = destFile.Read(destBuffer)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	if !bytes.Equal(sourceBuffer, destBuffer) {
+		return fmt.Errorf("first and last 5 bytes of file contents do not match")
+	}
+
+	return nil
 }

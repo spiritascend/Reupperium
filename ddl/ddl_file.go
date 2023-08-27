@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"reupperium/utils"
 	"strings"
 
 	"gopkg.in/resty.v1"
@@ -102,9 +103,16 @@ func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, 
 	}
 }
 
-func FilesDeleted(rc *resty.Client, tokens []string, fileids []string) (bool, error) {
-	for tkn := range tokens {
-		isdeleted, err := FilesDeleted_Safe(rc, tokens[tkn], fileids)
+func FilesDeleted(rc *resty.Client, fileids []string) (bool, error) {
+
+	config, err := utils.GetConfig()
+
+	if err != nil {
+		return false, err
+	}
+
+	for tkn := range config.Ddltokens {
+		isdeleted, err := FilesDeleted_Safe(rc, config.Ddltokens[tkn], fileids)
 
 		if err != nil {
 			return false, err

@@ -4,27 +4,35 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"reupperium/filecrypt"
+	"os"
 	"reupperium/utils"
 
 	"gopkg.in/resty.v1"
 )
 
 func main() {
+	restyclient := resty.New()
+	httpclient := &http.Client{}
+	for _, arg := range os.Args {
+		if arg == "-proxy" {
+			winprox, err := utils.GetWindowsProxy()
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			proxyURL, _ := url.Parse("http://" + winprox)
+			transport := &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+			restyclient.SetTransport(transport)
+			httpclient.Transport = transport
+			break
+		}
+	}
 
-	_, err := utils.CopyAll()
+	err := UpdateCheck(restyclient, httpclient)
 
 	if err != nil {
 		fmt.Println(err)
 	}
-
-	client := resty.New()
-
-	proxyURL, _ := url.Parse("http://127.0.0.1:8888")
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}
-	client.SetTransport(transport)
-
-	filecrypt.Initialize(client)
 }

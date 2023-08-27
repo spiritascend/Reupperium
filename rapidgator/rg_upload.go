@@ -1,11 +1,11 @@
 package rapidgator
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"reupperium/utils"
 	"time"
 
@@ -110,23 +110,6 @@ func GetFileUploadInfo(rc *resty.Client, uuid string, filename string) (string, 
 
 func UploadFile(rc *resty.Client, filepath string) (string, error) {
 
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-
-	if err != nil {
-		return "", err
-	}
-
-	// Change Hash
-	timestamp := time.Now().Unix()
-	timestampBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(timestampBytes, uint32(timestamp))
-
-	_, err = file.Write(timestampBytes)
-	if err != nil {
-		return "", err
-	}
-	file.Close()
-
 	filename, filehash, filesize, err := utils.GetFileInfo(filepath)
 
 	if err != nil {
@@ -139,10 +122,11 @@ func UploadFile(rc *resty.Client, filepath string) (string, error) {
 		return "", err
 	}
 
-	file, err = os.Open(filepath)
+	file, err := os.Open(filepath)
 	if err != nil {
 		return "", err
 	}
+	defer file.Close()
 
 	resp, err := rc.R().
 		SetHeaders(map[string]string{"Content-Type": "application/octet-stream"}).
@@ -176,8 +160,9 @@ func UploadFile(rc *resty.Client, filepath string) (string, error) {
 				return "", err
 			}
 			if fileinfo.Response.File.Size != int(filesize) {
-				return "", errors.New("rapidgator_upload error: upload size mismatch")
+				return "", fmt.Errorf("rapidgator_upload_error LocalSize %d, Uploaded Size %d", int(filesize), fileinfo.Response.File.Size)
 			}
+			Log("Uploaded File: " + path.Base(filepath))
 			return url, nil
 		}
 		time.Sleep(1000)
