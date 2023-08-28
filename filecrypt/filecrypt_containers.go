@@ -19,6 +19,18 @@ type MirrorContainer struct {
 	Mirrors map[string]Mirror `json:"container"`
 }
 
+type SeriesMirror struct {
+	DDLLinks        []string
+	RapidGatorLinks []string
+}
+type Series struct {
+	EpisodeMirrors SeriesMirror
+}
+
+type SeriesLibrary struct {
+	Container map[string]Series
+}
+
 func GetContainerContents(rc *resty.Client, id string) (MirrorContainer, error) {
 	config, err := utils.GetConfig()
 

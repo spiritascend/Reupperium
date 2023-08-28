@@ -19,18 +19,6 @@ import (
 	"gopkg.in/resty.v1"
 )
 
-type SeriesMirror struct {
-	DDLLinks        []string
-	RapidGatorLinks []string
-}
-type Series struct {
-	EpisodeMirrors SeriesMirror
-}
-
-type SeriesLibrary struct {
-	Container map[string]Series
-}
-
 func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.Config, path string) (string, string, error) {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
@@ -67,9 +55,9 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 	return "", "", fmt.Errorf("upload failed after %d attempts", config.MaxCopyRetries)
 }
 
-func processFilesInDirectory(rc *resty.Client, httpclient *http.Client, config *utils.Config, sourceDir string, tempDir string) (SeriesLibrary, error) {
-	var lib SeriesLibrary
-	lib.Container = make(map[string]Series)
+func processFilesInDirectory(rc *resty.Client, httpclient *http.Client, config *utils.Config, sourceDir string, tempDir string) (filecrypt.SeriesLibrary, error) {
+	var lib filecrypt.SeriesLibrary
+	lib.Container = make(map[string]filecrypt.Series)
 
 	var rootwg sync.WaitGroup
 	currentuploads := 0
@@ -101,8 +89,8 @@ func processFilesInDirectory(rc *resty.Client, httpclient *http.Client, config *
 					obj.EpisodeMirrors.RapidGatorLinks = append(obj.EpisodeMirrors.RapidGatorLinks, rglink)
 					lib.Container[dirBaseName] = obj
 				} else {
-					newobj := Series{
-						EpisodeMirrors: SeriesMirror{
+					newobj := filecrypt.Series{
+						EpisodeMirrors: filecrypt.SeriesMirror{
 							DDLLinks:        []string{ddllink},
 							RapidGatorLinks: []string{rglink},
 						},
@@ -121,14 +109,14 @@ func processFilesInDirectory(rc *resty.Client, httpclient *http.Client, config *
 	rootwg.Wait()
 
 	if err != nil {
-		return SeriesLibrary{}, err
+		return filecrypt.SeriesLibrary{}, err
 	}
 	return lib, nil
 }
 
 func UpdateCheck(rc *resty.Client, httpclient *http.Client) error {
 	config, err := utils.GetConfig()
-	libraryarr := []SeriesLibrary{}
+	libraryarr := []filecrypt.SeriesLibrary{}
 
 	if err != nil {
 		return err

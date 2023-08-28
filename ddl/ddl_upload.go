@@ -146,9 +146,14 @@ func UploadFileSafe(rc *resty.Client, httpclient *http.Client, token string, fp 
 		return "", err
 	}
 
+	if len(fileinfo.Result) == 0 {
+		return "", errors.New("failed to get file_info_result")
+	}
+
 	if fileinfo.Result[0].Size != fmt.Sprint(filestat.Size()) {
 		return "", errors.New("sizemismatch_ddl")
 	}
+
 	stat, err := file.Stat()
 
 	if err != nil {
