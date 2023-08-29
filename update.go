@@ -60,8 +60,8 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 	return "", "", fmt.Errorf("upload failed after %d attempts", config.MaxCopyRetries)
 }
 
-func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContainer *filecrypt.DeletedFileStore, config *utils.Config, directorypath *string, temppath *string) error {
-	dir, err := os.Open(*directorypath)
+func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContainer *filecrypt.DeletedFileStore, config *utils.Config, directorypath string, temppath string) error {
+	dir, err := os.Open(directorypath)
 	if err != nil {
 		return err
 	}
@@ -89,8 +89,8 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 
 			go func() {
 				defer fcwg.Done()
-				tempfilepath := filepath.Join(*temppath, filename)
-				srcfilepath := filepath.Join(*directorypath, filename)
+				tempfilepath := filepath.Join(temppath, filename)
+				srcfilepath := filepath.Join(directorypath, filename)
 
 				err := utils.CopyFileWithRetryAndVerification(srcfilepath, tempfilepath, config.MaxCopyRetries)
 				if err != nil {
@@ -146,8 +146,6 @@ func UpdateCheckV2(rc *resty.Client, httpclient *http.Client) error {
 		}
 		defer os.RemoveAll(tempDir)
 
-		fmt.Println(tempDir)
-
 		for deletedcontaineridx := range deletedcontainers {
 			folderpath, bffsuccessful := utils.SearchFolder(config.MediaPaths, deletedcontainers[deletedcontaineridx].ParentContainerName)
 
@@ -156,7 +154,7 @@ func UpdateCheckV2(rc *resty.Client, httpclient *http.Client) error {
 				continue
 			}
 
-			err = ProcessDirectory(rc, httpclient, &deletedcontainers[deletedcontaineridx], &config, &folderpath, &tempDir)
+			err = ProcessDirectory(rc, httpclient, &deletedcontainers[deletedcontaineridx], &config, folderpath, tempDir)
 			if err != nil {
 				return err
 			}

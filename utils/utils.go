@@ -55,10 +55,11 @@ type Config struct {
 			Token    string `json:"Token"`
 		} `json:"cookie"`
 	} `json:"RapidGator"`
-	MediaPaths                 []string `json:"MediaPaths"`
-	MaxCopyRetries             int      `json:"MaxCopyRetries"`
-	MaxConcurrentFilesUpload   int      `json:"MaxConcurrentFilesUpload"`
-	MaxConcurrentFoldersUpload int      `json:"MaxConcurrentFoldersUpload"`
+	MediaPaths                   []string `json:"MediaPaths"`
+	MaxCopyRetries               int      `json:"MaxCopyRetries"`
+	MaxConcurrentFilesUpload     int      `json:"MaxConcurrentFilesUpload"`
+	MaxConcurrentFoldersUpload   int      `json:"MaxConcurrentFoldersUpload"`
+	TimeBeforeNextDeletedCheckMs int      `json:"TimeBeforeNextDeletedCheckMs"`
 }
 
 func GetConfig() (Config, error) {
@@ -229,7 +230,7 @@ func compareFileContents(src, dst string) error {
 
 func SearchFolder(rootPaths []string, targetFolder string) (string, bool) {
 	var wg sync.WaitGroup
-	resultChan := make(chan string)
+	resultChan := make(chan string, len(rootPaths))
 
 	for _, root := range rootPaths {
 		wg.Add(1)
@@ -252,14 +253,13 @@ func SearchFolder(rootPaths []string, targetFolder string) (string, bool) {
 		}(root)
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
+	wg.Wait()
+	close(resultChan)
 
-	for result := range resultChan {
+	select {
+	case result := <-resultChan:
 		return result, true
+	default:
+		return "", false
 	}
-
-	return "", false
 }
