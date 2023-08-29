@@ -23,7 +23,7 @@ type Folder struct {
 }
 
 func GetContainers(rc *resty.Client, config *utils.Config) (Folder, error) {
-	var GCRet Folder
+	GCRet := Folder{}
 
 	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=myfolder", config.Filecrypttoken))
 
@@ -46,5 +46,10 @@ func GetContainers(rc *resty.Client, config *utils.Config) (Folder, error) {
 		return Folder{}, errors.New(fc_err.Error)
 	}
 
+	for containername, container := range GCRet.Containers {
+		if container.Status == "0" || container.Status == "1" || container.Status == "2" || container.Status == "3" {
+			delete(GCRet.Containers, containername)
+		}
+	}
 	return GCRet, nil
 }

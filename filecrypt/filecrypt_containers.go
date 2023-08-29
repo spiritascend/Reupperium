@@ -52,12 +52,35 @@ func GetContainerContents(rc *resty.Client, id string) (MirrorContainer, error) 
 func EditContainer(rc *resty.Client, config *utils.Config, deletedcontainer *DeletedFileStore) error {
 	queryValues := url.Values{}
 
-	if len(deletedcontainer.UpdatedDDLLinks) > 1 && len(deletedcontainer.UpdatedRGLinks) > 1 {
-		for ddllinkidx := range deletedcontainer.UpdatedDDLLinks {
-			queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", ddllinkidx), deletedcontainer.UpdatedDDLLinks[ddllinkidx])
+	if deletedcontainer.numberofmirrors > 1 {
+		container, err := GetContainerContents(rc, deletedcontainer.ParentContainerID)
+		if err != nil {
+			return err
 		}
-		for rglinkidx := range deletedcontainer.UpdatedRGLinks {
-			queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
+
+		if deletedcontainer.DDLDeleted && !deletedcontainer.RGDeleted {
+			for ddllinkidx := range deletedcontainer.UpdatedDDLLinks {
+				queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", ddllinkidx), deletedcontainer.UpdatedDDLLinks[ddllinkidx])
+			}
+
+			for cachedrglinkidx := range container.Mirrors["mirror_2"].Links {
+				queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", cachedrglinkidx), container.Mirrors["mirror_2"].Links[cachedrglinkidx])
+			}
+		} else if deletedcontainer.RGDeleted && !deletedcontainer.DDLDeleted {
+			for rglinkidx := range deletedcontainer.UpdatedRGLinks {
+				queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
+			}
+			for cachedddllinksidx := range container.Mirrors["mirror_1"].Links {
+				queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", cachedddllinksidx), container.Mirrors["mirror_1"].Links[cachedddllinksidx])
+			}
+		} else if deletedcontainer.RGDeleted && deletedcontainer.DDLDeleted {
+			for ddllinkidx := range deletedcontainer.UpdatedDDLLinks {
+				queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", ddllinkidx), deletedcontainer.UpdatedDDLLinks[ddllinkidx])
+			}
+
+			for rglinkidx := range deletedcontainer.UpdatedRGLinks {
+				queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
+			}
 		}
 	} else {
 		if deletedcontainer.DDLDeleted {
@@ -66,10 +89,11 @@ func EditContainer(rc *resty.Client, config *utils.Config, deletedcontainer *Del
 			}
 		} else if deletedcontainer.RGDeleted {
 			for rglinkidx := range deletedcontainer.UpdatedRGLinks {
-				queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
+				queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
 			}
 		}
 	}
+
 	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=editV2&container_id=%s&%s", config.Filecrypttoken, deletedcontainer.ParentContainerID, queryValues.Encode()))
 	if err != nil {
 		return err

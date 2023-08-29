@@ -91,7 +91,7 @@ func UploadFileSafe(rc *resty.Client, httpclient *http.Client, token string, fp 
 			return
 		}
 		io.WriteString(fieldWriter, sid)
-		partWriter, err := writer.CreateFormFile("file", fp)
+		partWriter, err := writer.CreateFormFile("file", filepath.Base(UploadFile_SanitizeFileName(fp)))
 		if err != nil {
 			fmt.Println("Error creating form file:", err)
 			return
@@ -164,7 +164,8 @@ func UploadFileSafe(rc *resty.Client, httpclient *http.Client, token string, fp 
 		return "", fmt.Errorf("uploadfailed_ddl_filesizemismatch LocalSize %d, Uploaded Size %s", stat.Size(), fileinfo.Result[0].Size)
 	}
 	Log("Uploaded File: " + path.Base(fp))
-	return fmt.Sprintf("https://ddownload.com/%s?%s", UFResp[0].File_code, filepath.Base(fp)), nil
+
+	return fmt.Sprintf("https://ddownload.com/%s?%s", UFResp[0].File_code, filepath.Base(UploadFile_SanitizeFileName(fp))), nil
 }
 
 func UploadFile(rc *resty.Client, httpclient *http.Client, fp string) (string, error) {

@@ -25,6 +25,7 @@ type DeletedFileStore struct {
 	RGDeleted           bool
 	UpdatedDDLLinks     []string
 	UpdatedRGLinks      []string
+	numberofmirrors     int
 }
 
 func ExtractRGID(url string) (string, error) {
@@ -86,6 +87,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 			}
 
 			if len(MirrorContainer.Mirrors) > 1 {
+				dfstemp.numberofmirrors = len(MirrorContainer.Mirrors)
 				for mirrorname, mirrorcontents := range MirrorContainer.Mirrors {
 					switch mirrorname {
 					case "mirror_1":
@@ -99,6 +101,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 							ddlids = append(ddlids, ddlextractedid)
 						}
 						dfstemp.DDLDeleted, err = ddl.FilesDeleted(rc, config, ddlids)
+
 						if err != nil {
 							errCh <- err
 							return
@@ -115,6 +118,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 							rgids = append(rgids, rgextractedid)
 						}
 						dfstemp.RGDeleted, err = rapidgator.FilesDeleted(rc, config, rgids)
+
 						if err != nil {
 							errCh <- err
 							return
@@ -127,6 +131,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 
 				}
 			} else {
+				dfstemp.numberofmirrors = 1
 				if strings.Contains(MirrorContainer.Mirrors["mirror_1"].Links[0], "ddownload.com") || strings.Contains(MirrorContainer.Mirrors["mirror_1"].Links[0], "ddl.to") {
 					ddlids := make([]string, 0, len(MirrorContainer.Mirrors["mirror_1"].Links))
 					for ddllinkidx := range MirrorContainer.Mirrors["mirror_1"].Links {

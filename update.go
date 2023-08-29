@@ -73,6 +73,7 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 	}
 
 	var fcwg sync.WaitGroup
+	var mcufc sync.WaitGroup
 	errCh := make(chan error, len(fileInfos))
 	currentuploads := 0
 
@@ -80,11 +81,17 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 		if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".rar") {
 			filename := fileInfo.Name()
 
-			fcwg.Add(1)
-			currentuploads += 1
-
 			if currentuploads == config.MaxConcurrentFilesUpload {
-				fcwg.Wait()
+				go func(currentuploadnum *int) {
+					defer mcufc.Done()
+					for {
+						if *currentuploadnum < config.MaxConcurrentFilesUpload || currentuploads == 0 {
+							return
+						}
+					}
+				}(&currentuploads)
+				mcufc.Add(1)
+				mcufc.Wait()
 			}
 
 			go func() {
@@ -111,8 +118,10 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 					fmt.Println(err)
 					errCh <- err
 				}
-
+				currentuploads -= 1
 			}()
+			fcwg.Add(1)
+			currentuploads += 1
 		}
 	}
 	fcwg.Wait()
@@ -147,10 +156,10 @@ func UpdateCheckV2(rc *resty.Client, httpclient *http.Client) error {
 		defer os.RemoveAll(tempDir)
 
 		for deletedcontaineridx := range deletedcontainers {
-			folderpath, bffsuccessful := utils.SearchFolder(config.MediaPaths, deletedcontainers[deletedcontaineridx].ParentContainerName)
+			folderpath, bffsuccessful := utils.SearchFolderV2(config.MediaPaths, deletedcontainers[deletedcontaineridx].ParentContainerName)
 
 			if !bffsuccessful {
-				fmt.Printf("Failed To Find Folder: %s", deletedcontainers[deletedcontaineridx].ParentContainerName)
+				fmt.Printf("Failed To Find Folder: %s\n", deletedcontainers[deletedcontaineridx].ParentContainerName)
 				continue
 			}
 

@@ -55,11 +55,13 @@ type Config struct {
 			Token    string `json:"Token"`
 		} `json:"cookie"`
 	} `json:"RapidGator"`
-	MediaPaths                   []string `json:"MediaPaths"`
-	MaxCopyRetries               int      `json:"MaxCopyRetries"`
-	MaxConcurrentFilesUpload     int      `json:"MaxConcurrentFilesUpload"`
-	MaxConcurrentFoldersUpload   int      `json:"MaxConcurrentFoldersUpload"`
-	TimeBeforeNextDeletedCheckMs int      `json:"TimeBeforeNextDeletedCheckMs"`
+	MediaPaths                    []string `json:"MediaPaths"`
+	MaxCopyRetries                int      `json:"MaxCopyRetries"`
+	MaxConcurrentFilesUpload      int      `json:"MaxConcurrentFilesUpload"`
+	MaxConcurrentFoldersUpload    int      `json:"MaxConcurrentFoldersUpload"`
+	TimeBeforeNextDeletedCheckMs  int      `json:"TimeBeforeNextDeletedCheckMs"`
+	CPUProfilePort                string   `json:"CPUProfilePort"`
+	MaxTimeoutUploadBeforeRetryMs int      `json:"MaxTimeoutUploadBeforeRetryMs"`
 }
 
 func GetConfig() (Config, error) {
@@ -262,4 +264,16 @@ func SearchFolder(rootPaths []string, targetFolder string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func SearchFolderV2(rootPaths []string, targetFolder string) (string, bool) {
+	for rootpathsidx := range rootPaths {
+		_, err := os.Stat(filepath.Join(rootPaths[rootpathsidx], targetFolder))
+		if err != nil && os.IsNotExist(err) {
+			continue
+		} else {
+			return filepath.Join(rootPaths[rootpathsidx], targetFolder), true
+		}
+	}
+	return "", false
 }
