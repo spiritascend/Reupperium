@@ -19,18 +19,6 @@ type MirrorContainer struct {
 	Mirrors map[string]Mirror `json:"container"`
 }
 
-type SeriesMirror struct {
-	DDLLinks        []string
-	RapidGatorLinks []string
-}
-type Series struct {
-	EpisodeMirrors SeriesMirror
-}
-
-type SeriesLibrary struct {
-	Container map[string]Series
-}
-
 func GetContainerContents(rc *resty.Client, id string) (MirrorContainer, error) {
 	config, err := utils.GetConfig()
 
@@ -61,31 +49,28 @@ func GetContainerContents(rc *resty.Client, id string) (MirrorContainer, error) 
 	return GCC_Ret, nil
 }
 
-func EditContainer(rc *resty.Client, container_id string, mirror_type string, links []string) error {
-	config, err := utils.GetConfig()
-
-	if err != nil {
-		return err
-	}
+func EditContainer(rc *resty.Client, config *utils.Config, deletedcontainer *DeletedFileStore) error {
 	queryValues := url.Values{}
 
-	for i, mirror := range links {
-
-		if mirror_type == "mirror_1" { // ddl
-			queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", i), mirror)
-			continue
+	if len(deletedcontainer.UpdatedDDLLinks) > 1 && len(deletedcontainer.UpdatedRGLinks) > 1 {
+		for ddllinkidx := range deletedcontainer.UpdatedDDLLinks {
+			queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", ddllinkidx), deletedcontainer.UpdatedDDLLinks[ddllinkidx])
 		}
-		if mirror_type == "mirror_2" { // rapidgator
-			queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", i), mirror)
-			continue
+		for rglinkidx := range deletedcontainer.UpdatedRGLinks {
+			queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
 		}
-
-		if i < len(links)-1 {
-			return errors.New("invalid_mirror_type_edit")
+	} else {
+		if deletedcontainer.DDLDeleted {
+			for ddllinkidx := range deletedcontainer.UpdatedDDLLinks {
+				queryValues.Add(fmt.Sprintf("mirror_1[0][%d]", ddllinkidx), deletedcontainer.UpdatedDDLLinks[ddllinkidx])
+			}
+		} else if deletedcontainer.RGDeleted {
+			for rglinkidx := range deletedcontainer.UpdatedRGLinks {
+				queryValues.Add(fmt.Sprintf("mirror_2[0][%d]", rglinkidx), deletedcontainer.UpdatedRGLinks[rglinkidx])
+			}
 		}
 	}
-
-	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=editV2&container_id=%s&%s", config.Filecrypttoken, container_id, queryValues.Encode()))
+	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=editV2&container_id=%s&%s", config.Filecrypttoken, deletedcontainer.ParentContainerID, queryValues.Encode()))
 	if err != nil {
 		return err
 	}

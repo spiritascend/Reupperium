@@ -81,7 +81,7 @@ func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, 
 		}
 
 		for infoidx := range finfo.Result {
-			if finfo.Result[infoidx].Status == 404 {
+			if finfo.Result[infoidx].Status != 200 || len(finfo.Result) != len(fileids) {
 				return true, nil
 			}
 		}
@@ -94,8 +94,12 @@ func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, 
 			return false, err
 		}
 
+		if finfo.Status != 200 {
+			return true, nil
+		}
+
 		for infoidx := range finfo.Result {
-			if finfo.Result[infoidx].Status == 404 {
+			if finfo.Result[infoidx].Status != 200 {
 				return true, nil
 			}
 		}
@@ -103,14 +107,7 @@ func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, 
 	}
 }
 
-func FilesDeleted(rc *resty.Client, fileids []string) (bool, error) {
-
-	config, err := utils.GetConfig()
-
-	if err != nil {
-		return false, err
-	}
-
+func FilesDeleted(rc *resty.Client, config *utils.Config, fileids []string) (bool, error) {
 	for tkn := range config.Ddltokens {
 		isdeleted, err := FilesDeleted_Safe(rc, config.Ddltokens[tkn], fileids)
 

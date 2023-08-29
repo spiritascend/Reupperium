@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reupperium/utils"
 
 	"gopkg.in/resty.v1"
 )
@@ -63,9 +64,9 @@ type FileInfoResp struct {
 	Details any `json:"details"`
 }
 
-func GetFileInfo(rc *resty.Client, fileid string) (FileInfoResp, error) {
+func GetFileInfo(rc *resty.Client, config *utils.Config, fileid string) (FileInfoResp, error) {
 	var Ret FileInfoResp
-	tkn, err := GetToken(rc)
+	tkn, err := GetToken(rc, config)
 
 	if err != nil {
 		return FileInfoResp{}, err
@@ -101,9 +102,9 @@ func FolderFilesExist(array []FolderFile, target string) bool {
 	return false
 }
 
-func GetFilesFromPageIndex(rc *resty.Client, pageidx int) ([]FolderFile, int, error) {
+func GetFilesFromPageIndex(rc *resty.Client, config *utils.Config, pageidx int) ([]FolderFile, int, error) {
 	var FR FolderResp
-	tkn, err := GetToken(rc)
+	tkn, err := GetToken(rc, config)
 
 	if err != nil {
 		return nil, 0, err
@@ -129,15 +130,15 @@ func GetFilesFromPageIndex(rc *resty.Client, pageidx int) ([]FolderFile, int, er
 	return FR.Response.Folder.Files, FR.Response.Pager.Total, nil
 }
 
-func FilesDeleted(rc *resty.Client, fileids []string) (bool, error) {
-	_, numofpages, err := GetFilesFromPageIndex(rc, 1)
+func FilesDeleted(rc *resty.Client, config *utils.Config, fileids []string) (bool, error) {
+	_, numofpages, err := GetFilesFromPageIndex(rc, config, 1)
 
 	if err != nil {
 		return false, err
 	}
 
 	for cpidx := 1; cpidx <= numofpages; cpidx++ { //cpidx == current page index
-		currentpagefiles, _, err := GetFilesFromPageIndex(rc, cpidx)
+		currentpagefiles, _, err := GetFilesFromPageIndex(rc, config, cpidx)
 
 		if err != nil {
 			return false, err

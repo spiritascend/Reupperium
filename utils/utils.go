@@ -9,7 +9,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
+	"sync"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -222,4 +225,41 @@ func compareFileContents(src, dst string) error {
 	}
 
 	return nil
+}
+
+func SearchFolder(rootPaths []string, targetFolder string) (string, bool) {
+	var wg sync.WaitGroup
+	resultChan := make(chan string)
+
+	for _, root := range rootPaths {
+		wg.Add(1)
+		go func(rootPath string) {
+			defer wg.Done()
+			err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+
+				if info.IsDir() && strings.EqualFold(info.Name(), targetFolder) {
+					resultChan <- path
+				}
+				return nil
+			})
+
+			if err != nil {
+				fmt.Println("Error:", err)
+			}
+		}(root)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for result := range resultChan {
+		return result, true
+	}
+
+	return "", false
 }

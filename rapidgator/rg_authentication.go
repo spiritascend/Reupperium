@@ -111,13 +111,7 @@ func RefreshToken(rc *resty.Client, username string, password string) (string, e
 	return Resp.Response.Token, nil
 }
 
-func GetToken(rc *resty.Client) (string, error) {
-	config, err := utils.GetConfig()
-
-	if err != nil {
-		return "", err
-	}
-
+func GetToken(rc *resty.Client, config *utils.Config) (string, error) {
 	isauthed, err := IsAuthenticated(rc, config.RapidGator.Token)
 
 	if err != nil {
@@ -131,7 +125,7 @@ func GetToken(rc *resty.Client) (string, error) {
 			return "", err
 		}
 
-		err = utils.OverwriteConfig(config)
+		err = utils.OverwriteConfig(*config)
 
 		if err != nil {
 			return "", err

@@ -22,13 +22,7 @@ type Folder struct {
 	Containers map[string]Folder_Container `json:"container,omitempty"`
 }
 
-func GetContainers(rc *resty.Client) (Folder, error) {
-	config, err := utils.GetConfig()
-
-	if err != nil {
-		return Folder{}, err
-	}
-
+func GetContainers(rc *resty.Client, config *utils.Config) (Folder, error) {
 	var GCRet Folder
 
 	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=myfolder", config.Filecrypttoken))

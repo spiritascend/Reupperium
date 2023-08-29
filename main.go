@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"reupperium/utils"
+	"time"
 
 	"gopkg.in/resty.v1"
 )
@@ -29,10 +30,12 @@ func main() {
 			break
 		}
 	}
-
-	err := UpdateCheck(restyclient, httpclient)
-
-	if err != nil {
-		fmt.Println(err)
+	for {
+		fmt.Println("Running Update Check")
+		err := UpdateCheckV2(restyclient, httpclient)
+		if err != nil {
+			fmt.Println(err)
+		}
+		time.Sleep(1 * time.Hour)
 	}
 }

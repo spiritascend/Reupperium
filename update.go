@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,7 +18,7 @@ import (
 	"gopkg.in/resty.v1"
 )
 
-func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.Config, path string) (string, string, error) {
+func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.Config, path string, deletedddl bool, deletedrg bool) (string, string, error) {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return "", "", err
@@ -36,18 +35,24 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 	file.Close()
 
 	for attempt := 1; attempt <= config.MaxCopyRetries; attempt++ {
-		ddllink, err := ddl.UploadFile(rc, httpclient, path)
-		if err != nil {
-			ddl.Log_Error(err.Error())
-			time.Sleep(time.Second * 5)
-			continue
+		var ddllink, rglink string
+
+		if deletedddl {
+			ddllink, err = ddl.UploadFile(rc, httpclient, path)
+			if err != nil {
+				ddl.Log_Error(err.Error())
+				time.Sleep(time.Second * 5)
+				continue
+			}
 		}
 
-		rglink, err := rapidgator.UploadFile(rc, path)
-		if err != nil {
-			rapidgator.Log_Error(err.Error())
-			time.Sleep(time.Second * 5)
-			continue
+		if deletedrg {
+			rglink, err = rapidgator.UploadFile(rc, config, path)
+			if err != nil {
+				rapidgator.Log_Error(err.Error())
+				time.Sleep(time.Second * 5)
+				continue
+			}
 		}
 
 		return ddllink, rglink, nil
@@ -55,136 +60,112 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 	return "", "", fmt.Errorf("upload failed after %d attempts", config.MaxCopyRetries)
 }
 
-func processFilesInDirectory(rc *resty.Client, httpclient *http.Client, config *utils.Config, sourceDir string, tempDir string) (filecrypt.SeriesLibrary, error) {
-	var lib filecrypt.SeriesLibrary
-	lib.Container = make(map[string]filecrypt.Series)
-
-	var rootwg sync.WaitGroup
-	currentuploads := 0
-	err := filepath.Walk(sourceDir, func(filePath string, fileInfo os.FileInfo, err error) error {
-		if currentuploads == config.MaxConcurrentFilesUpload {
-			rootwg.Wait()
-		}
-		if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".rar") {
-			go func() {
-				defer rootwg.Done()
-				tempFilePath := filepath.Join(tempDir, fileInfo.Name())
-
-				err := utils.CopyFileWithRetryAndVerification(filePath, tempFilePath, config.MaxCopyRetries)
-				if err != nil {
-					fmt.Println("Error copying file:", err)
-				}
-
-				dirName := filepath.Dir(filePath)
-				dirBaseName := filepath.Base(dirName)
-
-				ddllink, rglink, err := HandleFileUpload(rc, httpclient, config, tempFilePath)
-
-				if err != nil {
-					fmt.Printf("HandleFileUpload error: %s\n", err)
-				}
-
-				if obj, ok := lib.Container[dirBaseName]; ok {
-					obj.EpisodeMirrors.DDLLinks = append(obj.EpisodeMirrors.DDLLinks, ddllink)
-					obj.EpisodeMirrors.RapidGatorLinks = append(obj.EpisodeMirrors.RapidGatorLinks, rglink)
-					lib.Container[dirBaseName] = obj
-				} else {
-					newobj := filecrypt.Series{
-						EpisodeMirrors: filecrypt.SeriesMirror{
-							DDLLinks:        []string{ddllink},
-							RapidGatorLinks: []string{rglink},
-						},
-					}
-					lib.Container[dirBaseName] = newobj
-				}
-
-				os.Remove(tempFilePath)
-				currentuploads -= 1
-			}()
-			currentuploads += 1
-			rootwg.Add(1)
-		}
-		return nil
-	})
-	rootwg.Wait()
-
+func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContainer *filecrypt.DeletedFileStore, config *utils.Config, directorypath *string, temppath *string) error {
+	dir, err := os.Open(*directorypath)
 	if err != nil {
-		return filecrypt.SeriesLibrary{}, err
+		return err
 	}
-	return lib, nil
+	defer dir.Close()
+
+	fileInfos, err := dir.Readdir(-1)
+	if err != nil {
+		return err
+	}
+
+	var fcwg sync.WaitGroup
+	errCh := make(chan error, len(fileInfos))
+	currentuploads := 0
+
+	for _, fileInfo := range fileInfos {
+		if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".rar") {
+			filename := fileInfo.Name()
+
+			fcwg.Add(1)
+			currentuploads += 1
+
+			if currentuploads == config.MaxConcurrentFilesUpload {
+				fcwg.Wait()
+			}
+
+			go func() {
+				defer fcwg.Done()
+				tempfilepath := filepath.Join(*temppath, filename)
+				srcfilepath := filepath.Join(*directorypath, filename)
+
+				err := utils.CopyFileWithRetryAndVerification(srcfilepath, tempfilepath, config.MaxCopyRetries)
+				if err != nil {
+					errCh <- err
+				}
+
+				ddllink, rglink, err := HandleFileUpload(rc, httpclient, config, tempfilepath, DeletedContainer.DDLDeleted, DeletedContainer.RGDeleted)
+
+				if err != nil {
+					errCh <- fmt.Errorf("handlefileupload error: %s", err)
+				}
+				DeletedContainer.UpdatedDDLLinks = append(DeletedContainer.UpdatedDDLLinks, ddllink)
+				DeletedContainer.UpdatedRGLinks = append(DeletedContainer.UpdatedRGLinks, rglink)
+
+				err = os.Remove(tempfilepath)
+
+				if err != nil {
+					fmt.Println(err)
+					errCh <- err
+				}
+
+			}()
+		}
+	}
+	fcwg.Wait()
+	return nil
 }
 
-func UpdateCheck(rc *resty.Client, httpclient *http.Client) error {
+func UpdateCheckV2(rc *resty.Client, httpclient *http.Client) error {
 	config, err := utils.GetConfig()
-	libraryarr := []filecrypt.SeriesLibrary{}
 
 	if err != nil {
-		return err
+		fmt.Println(err)
 	}
 
-	filecrypt.Log("Getting Filecrypt IDs")
-
-	ddlids, rgids, err := filecrypt.GetIDS(rc)
+	deletedcontainers, err := filecrypt.GetDeletedContainers(rc, &config)
 
 	if err != nil {
-		return err
+		fmt.Println(err)
 	}
 
-	ddldeleted, err := ddl.FilesDeleted(rc, ddlids)
-
-	if err != nil {
-		return err
-	}
-	rgdeleted, err := rapidgator.FilesDeleted(rc, rgids)
-
-	if err != nil {
-		return err
-	}
-
-	if ddldeleted || rgdeleted {
-		fmt.Println("Files Deleted Running Reupload Routine")
+	if len(deletedcontainers) > 0 {
+		fmt.Println("Deleted Files Detected")
 
 		cd, err := os.Getwd()
 		if err != nil {
-			return err
+			fmt.Println("Failed To Get Current Directory")
 		}
 
 		tempDir, err := os.MkdirTemp(cd, "temp")
 		if err != nil {
-			return err
+			fmt.Printf("Failed to Create Temp Directory %s", err)
 		}
+		defer os.RemoveAll(tempDir)
 
-		numdirectoriesuploading := 0
-		var duwg sync.WaitGroup
+		fmt.Println(tempDir)
 
-		for directoryidx := range config.MediaPaths {
-			dirIdxCopy := directoryidx
+		for deletedcontaineridx := range deletedcontainers {
+			folderpath, bffsuccessful := utils.SearchFolder(config.MediaPaths, deletedcontainers[deletedcontaineridx].ParentContainerName)
 
-			if numdirectoriesuploading == config.MaxConcurrentFoldersUpload {
-				duwg.Wait()
+			if !bffsuccessful {
+				fmt.Printf("Failed To Find Folder: %s", deletedcontainers[deletedcontaineridx].ParentContainerName)
+				continue
 			}
 
-			go func() {
-				defer duwg.Done()
-				library, err := processFilesInDirectory(rc, httpclient, &config, config.MediaPaths[dirIdxCopy], tempDir)
-				if err != nil {
-					fmt.Printf("Error Processing Files In Directory: %s\n", err)
-				}
-				libraryarr = append(libraryarr, library)
-				numdirectoriesuploading -= 1
-			}()
-			numdirectoriesuploading += 1
-			duwg.Add(1)
-		}
-		duwg.Wait()
+			err = ProcessDirectory(rc, httpclient, &deletedcontainers[deletedcontaineridx], &config, &folderpath, &tempDir)
+			if err != nil {
+				return err
+			}
 
-		err = os.Remove(tempDir)
-		if err != nil {
-			fmt.Println("Error deleting file:", err)
+			err = filecrypt.EditContainer(rc, &config, &deletedcontainers[deletedcontaineridx])
+			if err != nil {
+				return err
+			}
 		}
-
-		libjson, _ := json.Marshal(libraryarr)
-		fmt.Println(string(libjson))
 	}
 	return nil
 }

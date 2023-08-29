@@ -108,7 +108,7 @@ func GetFileUploadInfo(rc *resty.Client, uuid string, filename string) (string, 
 	return fmt.Sprintf("https://rapidgator.net/file/%s/%s.html", usresp[uuid].Id32, filename), usresp[uuid].Id32, nil
 }
 
-func UploadFile(rc *resty.Client, filepath string) (string, error) {
+func UploadFile(rc *resty.Client, config *utils.Config, filepath string) (string, error) {
 
 	filename, filehash, filesize, err := utils.GetFileInfo(filepath)
 
@@ -155,7 +155,7 @@ func UploadFile(rc *resty.Client, filepath string) (string, error) {
 		}
 
 		if len(id) > 0 {
-			fileinfo, err := GetFileInfo(rc, id)
+			fileinfo, err := GetFileInfo(rc, config, id)
 			if err != nil {
 				return "", err
 			}
