@@ -2,11 +2,9 @@ package filecrypt
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"net/http"
 	"reupperium/utils"
-
-	"gopkg.in/resty.v1"
 )
 
 type Folder_Container struct {
@@ -22,28 +20,28 @@ type Folder struct {
 	Containers map[string]Folder_Container `json:"container,omitempty"`
 }
 
-func GetContainers(rc *resty.Client, config *utils.Config) (Folder, error) {
+func GetContainers(httpclient *http.Client, config *utils.Config) (Folder, error) {
 	GCRet := Folder{}
 
-	resp, err := rc.R().Post(fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=myfolder", config.Filecrypttoken))
+	request, err := http.NewRequest("POST", fmt.Sprintf("http://filecrypt.cc/api.php?api_key=%s&fn=containerV2&sub=myfolder", config.Filecrypttoken), nil)
+	if err != nil {
+		return GCRet, err
+	}
+
+	response, err := httpclient.Do(request)
+	if err != nil {
+		return GCRet, err
+	}
+	defer response.Body.Close()
+
+	err = json.NewDecoder(response.Body).Decode(&GCRet)
 
 	if err != nil {
-		Log_Error(err.Error())
-		return Folder{}, err
+		return GCRet, err
 	}
 
-	if err := json.Unmarshal(resp.Body(), &GCRet); err != nil {
-		Log_Error(err.Error())
-		return Folder{}, err
-	}
-
-	var fc_err filecrypt_error
-	if err := json.Unmarshal(resp.Body(), &fc_err); err != nil {
-		return Folder{}, err
-	}
-
-	if fc_err.State == 0 {
-		return Folder{}, errors.New(fc_err.Error)
+	if GCRet.State == 0 {
+		return Folder{}, fmt.Errorf("failed to get ddl containers because state is %d", GCRet.State)
 	}
 
 	for containername, container := range GCRet.Containers {

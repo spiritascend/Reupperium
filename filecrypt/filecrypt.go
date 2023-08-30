@@ -3,20 +3,14 @@ package filecrypt
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"reupperium/ddl"
 	"reupperium/rapidgator"
 	"reupperium/utils"
 	"strings"
 	"sync"
-
-	"gopkg.in/resty.v1"
 )
-
-type filecrypt_error struct {
-	State int    `json:"state"`
-	Error string `json:"error"`
-}
 
 type DeletedFileStore struct {
 	ParentContainerID   string
@@ -60,8 +54,8 @@ func ExtractDDLID(url string) (string, error) {
 	return match[1], nil
 }
 
-func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFileStore, error) {
-	Containers, err := GetContainers(rc, config)
+func GetDeletedContainers(httpclient *http.Client, config *utils.Config) ([]DeletedFileStore, error) {
+	Containers, err := GetContainers(httpclient, config)
 	if err != nil {
 		return nil, err
 	}
@@ -80,14 +74,16 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 			dfstemp.ParentContainerName = container.Name
 			dfstemp.ParentContainerID = container.ID
 
-			MirrorContainer, err := GetContainerContents(rc, container.ID)
+			MirrorContainer, err := GetContainerContents(httpclient, config, container.ID)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
 			if len(MirrorContainer.Mirrors) > 1 {
+
 				dfstemp.numberofmirrors = len(MirrorContainer.Mirrors)
+
 				for mirrorname, mirrorcontents := range MirrorContainer.Mirrors {
 					switch mirrorname {
 					case "mirror_1":
@@ -100,7 +96,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 							}
 							ddlids = append(ddlids, ddlextractedid)
 						}
-						dfstemp.DDLDeleted, err = ddl.FilesDeleted(rc, config, ddlids)
+						dfstemp.DDLDeleted, err = ddl.FilesDeleted(httpclient, config, ddlids)
 
 						if err != nil {
 							errCh <- err
@@ -117,7 +113,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 							}
 							rgids = append(rgids, rgextractedid)
 						}
-						dfstemp.RGDeleted, err = rapidgator.FilesDeleted(rc, config, rgids)
+						dfstemp.RGDeleted, err = rapidgator.FilesDeleted(httpclient, config, rgids)
 
 						if err != nil {
 							errCh <- err
@@ -142,7 +138,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 						}
 						ddlids = append(ddlids, ddlparsedid)
 					}
-					dfstemp.DDLDeleted, err = ddl.FilesDeleted(rc, config, ddlids)
+					dfstemp.DDLDeleted, err = ddl.FilesDeleted(httpclient, config, ddlids)
 					if err != nil {
 						errCh <- err
 					}
@@ -157,7 +153,7 @@ func GetDeletedContainers(rc *resty.Client, config *utils.Config) ([]DeletedFile
 						}
 						rgids = append(rgids, rgparsedid)
 					}
-					dfstemp.RGDeleted, err = rapidgator.FilesDeleted(rc, config, rgids)
+					dfstemp.RGDeleted, err = rapidgator.FilesDeleted(httpclient, config, rgids)
 					if err != nil {
 						errCh <- err
 						return

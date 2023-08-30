@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reupperium/utils"
-
-	"gopkg.in/resty.v1"
 )
 
 type FolderFile struct {
@@ -49,47 +48,37 @@ type FolderResp struct {
 type FileInfoResp struct {
 	Response struct {
 		File struct {
-			FileID    string `json:"file_id"`
-			Mode      int    `json:"mode"`
-			ModeLabel string `json:"mode_label"`
-			FolderID  string `json:"folder_id"`
-			Name      string `json:"name"`
-			Hash      string `json:"hash"`
-			Size      int    `json:"size"`
-			Created   int    `json:"created"`
-			URL       string `json:"url"`
+			FileID      string `json:"file_id"`
+			Mode        int    `json:"mode"`
+			ModeLabel   string `json:"mode_label"`
+			FolderID    string `json:"folder_id"`
+			Name        string `json:"name"`
+			Hash        string `json:"hash"`
+			Size        int    `json:"size"`
+			Created     int    `json:"created"`
+			URL         string `json:"url"`
+			NbDownloads int    `json:"nb_downloads"`
 		} `json:"file"`
 	} `json:"response"`
 	Status  int `json:"status"`
 	Details any `json:"details"`
 }
 
-func GetFileInfo(rc *resty.Client, config *utils.Config, fileid string) (FileInfoResp, error) {
-	var Ret FileInfoResp
-	tkn, err := GetToken(rc, config)
+func GetFileInfo(httpclient *http.Client, config *utils.Config, id string) (FileInfoResp, error) {
+	fileInfo := FileInfoResp{}
 
+	resp, err := httpclient.Get(fmt.Sprintf("https://rapidgator.net/api/v2/file/info/?file_id=%s&token=%s", id, config.RapidGator.Token))
 	if err != nil {
-		return FileInfoResp{}, err
+		return fileInfo, err
 	}
+	defer resp.Body.Close()
 
-	url := fmt.Sprintf("https://rapidgator.net/api/v2/file/info?file_id=%s&token=%s", fileid, tkn)
-	resp, err := rc.R().Get(url)
-
+	err = json.NewDecoder(resp.Body).Decode(&fileInfo)
 	if err != nil {
-		return FileInfoResp{}, err
+		return fileInfo, err
 	}
 
-	err = json.Unmarshal(resp.Body(), &Ret)
-
-	if err != nil {
-		return FileInfoResp{}, err
-	}
-
-	if Ret.Status != 200 {
-		return FileInfoResp{}, errors.New("rapidgator_getfileinfo error: request didn't respond with status code 200")
-	}
-
-	return Ret, nil
+	return fileInfo, nil
 }
 
 func FolderFilesExist(array []FolderFile, target string) bool {
@@ -102,22 +91,23 @@ func FolderFilesExist(array []FolderFile, target string) bool {
 	return false
 }
 
-func GetFilesFromPageIndex(rc *resty.Client, config *utils.Config, pageidx int) ([]FolderFile, int, error) {
-	var FR FolderResp
-	tkn, err := GetToken(rc, config)
+func GetFilesFromPageIndex(httpclient *http.Client, config *utils.Config, pageidx int) ([]FolderFile, int, error) {
+	FR := FolderResp{}
+	tkn, err := GetToken(httpclient, config)
 
 	if err != nil {
 		return nil, 0, err
 	}
 
 	url := fmt.Sprintf("https://rapidgator.net/api/v2/folder/content?page=%d&token=%s", pageidx, tkn)
-	resp, err := rc.R().Get(url)
+	resp, err := httpclient.Get(url)
 
 	if err != nil {
 		return nil, 0, err
 	}
+	defer resp.Body.Close()
 
-	err = json.Unmarshal(resp.Body(), &FR)
+	err = json.NewDecoder(resp.Body).Decode(&FR)
 
 	if err != nil {
 		return nil, 0, err
@@ -130,15 +120,15 @@ func GetFilesFromPageIndex(rc *resty.Client, config *utils.Config, pageidx int) 
 	return FR.Response.Folder.Files, FR.Response.Pager.Total, nil
 }
 
-func FilesDeleted(rc *resty.Client, config *utils.Config, fileids []string) (bool, error) {
-	_, numofpages, err := GetFilesFromPageIndex(rc, config, 1)
+func FilesDeleted(httpclient *http.Client, config *utils.Config, fileids []string) (bool, error) {
+	_, numofpages, err := GetFilesFromPageIndex(httpclient, config, 1)
 
 	if err != nil {
 		return false, err
 	}
 
 	for cpidx := 1; cpidx <= numofpages; cpidx++ { //cpidx == current page index
-		currentpagefiles, _, err := GetFilesFromPageIndex(rc, config, cpidx)
+		currentpagefiles, _, err := GetFilesFromPageIndex(httpclient, config, cpidx)
 
 		if err != nil {
 			return false, err

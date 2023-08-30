@@ -14,11 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"gopkg.in/resty.v1"
 )
 
-func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.Config, path string, deletedddl bool, deletedrg bool) (string, string, error) {
+func HandleFileUpload(httpclient *http.Client, config *utils.Config, path string, deletedddl bool, deletedrg bool) (string, string, error) {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return "", "", err
@@ -38,7 +36,7 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 		var ddllink, rglink string
 
 		if deletedddl {
-			ddllink, err = ddl.UploadFile(rc, httpclient, path)
+			ddllink, err = ddl.UploadFile(httpclient, path)
 			if err != nil {
 				ddl.Log_Error(err.Error())
 				time.Sleep(time.Second * 5)
@@ -47,7 +45,7 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 		}
 
 		if deletedrg {
-			rglink, err = rapidgator.UploadFile(rc, config, path)
+			rglink, err = rapidgator.UploadFile(httpclient, config, path)
 			if err != nil {
 				rapidgator.Log_Error(err.Error())
 				time.Sleep(time.Second * 5)
@@ -60,7 +58,7 @@ func HandleFileUpload(rc *resty.Client, httpclient *http.Client, config *utils.C
 	return "", "", fmt.Errorf("upload failed after %d attempts", config.MaxCopyRetries)
 }
 
-func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContainer *filecrypt.DeletedFileStore, config *utils.Config, directorypath string, temppath string) error {
+func ProcessDirectory(httpclient *http.Client, DeletedContainer *filecrypt.DeletedFileStore, config *utils.Config, directorypath string, temppath string) error {
 	dir, err := os.Open(directorypath)
 	if err != nil {
 		return err
@@ -97,7 +95,7 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 					return
 				}
 
-				ddllink, rglink, err := HandleFileUpload(rc, httpclient, config, tempfilepath, DeletedContainer.DDLDeleted, DeletedContainer.RGDeleted)
+				ddllink, rglink, err := HandleFileUpload(httpclient, config, tempfilepath, DeletedContainer.DDLDeleted, DeletedContainer.RGDeleted)
 				if err != nil {
 					errCh <- fmt.Errorf("handlefileupload error: %s", err)
 				} else {
@@ -127,14 +125,14 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 	return nil
 }
 
-func UpdateCheckV2(rc *resty.Client, httpclient *http.Client) error {
+func UpdateCheckV2(httpclient *http.Client) error {
 	config, err := utils.GetConfig()
 
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	deletedcontainers, err := filecrypt.GetDeletedContainers(rc, &config)
+	deletedcontainers, err := filecrypt.GetDeletedContainers(httpclient, &config)
 
 	if err != nil {
 		fmt.Println(err)
@@ -162,12 +160,12 @@ func UpdateCheckV2(rc *resty.Client, httpclient *http.Client) error {
 				continue
 			}
 
-			err = ProcessDirectory(rc, httpclient, &deletedcontainers[deletedcontaineridx], &config, folderpath, tempDir)
+			err = ProcessDirectory(httpclient, &deletedcontainers[deletedcontaineridx], &config, folderpath, tempDir)
 			if err != nil {
 				return err
 			}
 
-			err = filecrypt.EditContainer(rc, &config, &deletedcontainers[deletedcontaineridx])
+			err = filecrypt.EditContainer(httpclient, &config, &deletedcontainers[deletedcontaineridx])
 			if err != nil {
 				return err
 			}

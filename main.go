@@ -12,8 +12,6 @@ import (
 	"time"
 
 	_ "net/http/pprof"
-
-	"gopkg.in/resty.v1"
 )
 
 func main() {
@@ -22,7 +20,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	restyclient := resty.New()
 	httpclient := &http.Client{Timeout: time.Duration(config.MaxTimeoutUploadBeforeRetryMs) * time.Millisecond}
 	for _, arg := range os.Args {
 
@@ -45,8 +42,6 @@ func main() {
 			transport := &http.Transport{
 				Proxy: http.ProxyURL(proxyURL),
 			}
-			restyclient.SetTransport(transport)
-			restyclient.SetTimeout(time.Duration(config.MaxTimeoutUploadBeforeRetryMs) * time.Millisecond)
 			httpclient.Transport = transport
 			break
 		}
@@ -60,7 +55,7 @@ func main() {
 		go func() {
 			defer mfnwg.Done()
 			updatecheckstart := time.Now()
-			err := UpdateCheckV2(restyclient, httpclient)
+			err := UpdateCheckV2(httpclient)
 			if err != nil {
 				fmt.Println(err)
 			}

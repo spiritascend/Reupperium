@@ -7,8 +7,6 @@ import (
 	"regexp"
 	"reupperium/utils"
 	"strings"
-
-	"gopkg.in/resty.v1"
 )
 
 type FileInfo_Resp struct {
@@ -45,36 +43,40 @@ func UploadFile_SanitizeFileName(filename string) string {
 	return regex.ReplaceAllString(filename, "x")
 }
 
-func GetFileInfo(rc *resty.Client, token string, filecode []string) (FileInfo_Resp, error) {
-	var Ret FileInfo_Resp
+func GetFileInfo(httpclient *http.Client, token string, filecode []string) (FileInfo_Resp, error) {
+	Ret := FileInfo_Resp{}
 
-	url := fmt.Sprintf("https://api-v2.ddownload.com/api/file/info?key=%s&file_code=%s", token, strings.Join(filecode, ","))
-	resp, err := rc.R().Get(url)
+	request, err := http.NewRequest("GET", fmt.Sprintf("https://api-v2.ddownload.com/api/file/info?key=%s&file_code=%s", token, strings.Join(filecode, ",")), nil)
 	if err != nil {
-		return Ret, fmt.Errorf("error making GET request: %w", err)
+		fmt.Println("Error creating request:", err)
+		return Ret, err
 	}
 
-	if resp.StatusCode() != http.StatusOK {
-		return Ret, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
+	response, err := httpclient.Do(request)
+	if err != nil {
+		fmt.Println("Error sending request:", err)
+		return Ret, err
+	}
+	defer response.Body.Close()
+
+	if json.NewDecoder(response.Body).Decode(&Ret) != nil {
+		return Ret, nil
 	}
 
-	if err := json.Unmarshal(resp.Body(), &Ret); err != nil {
-		return Ret, fmt.Errorf("error unmarshaling JSON response: %w", err)
+	if Ret.Status != 200 {
+		return Ret, fmt.Errorf("failed to get ddl file info because response status was %d", Ret.Status)
 	}
 
 	return Ret, nil
 }
 
-func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, error) {
-	var Newfileids []string
-
+func FilesDeleted_Safe(httpclient *http.Client, token string, fileids []string) (bool, error) {
 	if len(fileids) == 0 {
 		return false, nil
 	}
 
 	if len(fileids) >= 50 {
-		finfo, err := GetFileInfo(rc, token, fileids[:50])
-		Newfileids = fileids[50:]
+		finfo, err := GetFileInfo(httpclient, token, fileids[:50])
 
 		if err != nil {
 			return false, err
@@ -85,10 +87,10 @@ func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, 
 				return true, nil
 			}
 		}
-		return FilesDeleted_Safe(rc, token, Newfileids)
+		return FilesDeleted_Safe(httpclient, token, fileids[50:])
 
 	} else {
-		finfo, err := GetFileInfo(rc, token, fileids)
+		finfo, err := GetFileInfo(httpclient, token, fileids)
 
 		if err != nil {
 			return false, err
@@ -107,9 +109,9 @@ func FilesDeleted_Safe(rc *resty.Client, token string, fileids []string) (bool, 
 	}
 }
 
-func FilesDeleted(rc *resty.Client, config *utils.Config, fileids []string) (bool, error) {
+func FilesDeleted(httpclient *http.Client, config *utils.Config, fileids []string) (bool, error) {
 	for tkn := range config.Ddltokens {
-		isdeleted, err := FilesDeleted_Safe(rc, config.Ddltokens[tkn], fileids)
+		isdeleted, err := FilesDeleted_Safe(httpclient, config.Ddltokens[tkn], fileids)
 
 		if err != nil {
 			return false, err

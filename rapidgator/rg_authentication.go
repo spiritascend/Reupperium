@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reupperium/utils"
-
-	"gopkg.in/resty.v1"
 )
 
 type LoginResp struct {
@@ -70,17 +69,18 @@ type UserInfo struct {
 	Details any `json:"details"`
 }
 
-func IsAuthenticated(rc *resty.Client, token string) (bool, error) {
+func IsAuthenticated(httpclient *http.Client, token string) (bool, error) {
 	var Resp UserInfo
 
 	url := fmt.Sprintf("https://rapidgator.net/api/v2/user/info?token=%s", token)
-	resp, err := rc.R().Get(url)
+	resp, err := httpclient.Get(url)
 
 	if err != nil {
 		return false, err
 	}
+	defer resp.Body.Close()
 
-	err = json.Unmarshal(resp.Body(), &Resp)
+	err = json.NewDecoder(resp.Body).Decode(&Resp)
 
 	if err != nil {
 		return false, err
@@ -89,16 +89,17 @@ func IsAuthenticated(rc *resty.Client, token string) (bool, error) {
 	return Resp.Status != 401, nil
 }
 
-func RefreshToken(rc *resty.Client, username string, password string) (string, error) {
+func RefreshToken(httpclient *http.Client, username string, password string) (string, error) {
 	var Resp LoginResp
 	url := fmt.Sprintf("https://rapidgator.net/api/v2/user/login?login=%s&password=%s&code=000000", username, password)
-	resp, err := rc.R().Get(url)
+	resp, err := httpclient.Get(url)
 
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 
-	err = json.Unmarshal(resp.Body(), &Resp)
+	err = json.NewDecoder(resp.Body).Decode(&Resp)
 
 	if err != nil {
 		return "", err
@@ -111,15 +112,15 @@ func RefreshToken(rc *resty.Client, username string, password string) (string, e
 	return Resp.Response.Token, nil
 }
 
-func GetToken(rc *resty.Client, config *utils.Config) (string, error) {
-	isauthed, err := IsAuthenticated(rc, config.RapidGator.Token)
+func GetToken(httpclient *http.Client, config *utils.Config) (string, error) {
+	isauthed, err := IsAuthenticated(httpclient, config.RapidGator.Token)
 
 	if err != nil {
 		return "", err
 	}
 
 	if !isauthed {
-		config.RapidGator.Token, err = RefreshToken(rc, config.RapidGator.Email, config.RapidGator.Password)
+		config.RapidGator.Token, err = RefreshToken(httpclient, config.RapidGator.Email, config.RapidGator.Password)
 
 		if err != nil {
 			return "", err
