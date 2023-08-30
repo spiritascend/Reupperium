@@ -73,58 +73,57 @@ func ProcessDirectory(rc *resty.Client, httpclient *http.Client, DeletedContaine
 	}
 
 	var fcwg sync.WaitGroup
-	var mcufc sync.WaitGroup
+	var fumtx sync.Mutex
+	semaphore := make(chan struct{}, config.MaxConcurrentFilesUpload)
+
 	errCh := make(chan error, len(fileInfos))
-	currentuploads := 0
 
 	for _, fileInfo := range fileInfos {
 		if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".rar") {
 			filename := fileInfo.Name()
 
-			if currentuploads == config.MaxConcurrentFilesUpload {
-				go func(currentuploadnum *int) {
-					defer mcufc.Done()
-					for {
-						if *currentuploadnum < config.MaxConcurrentFilesUpload || currentuploads == 0 {
-							return
-						}
-					}
-				}(&currentuploads)
-				mcufc.Add(1)
-				mcufc.Wait()
-			}
+			semaphore <- struct{}{}
 
+			fcwg.Add(1)
 			go func() {
 				defer fcwg.Done()
+				defer func() { <-semaphore }()
+
 				tempfilepath := filepath.Join(temppath, filename)
 				srcfilepath := filepath.Join(directorypath, filename)
 
-				err := utils.CopyFileWithRetryAndVerification(srcfilepath, tempfilepath, config.MaxCopyRetries)
-				if err != nil {
+				if err := utils.CopyFileWithRetryAndVerification(srcfilepath, tempfilepath, config.MaxCopyRetries); err != nil {
 					errCh <- err
+					return
 				}
 
 				ddllink, rglink, err := HandleFileUpload(rc, httpclient, config, tempfilepath, DeletedContainer.DDLDeleted, DeletedContainer.RGDeleted)
-
 				if err != nil {
 					errCh <- fmt.Errorf("handlefileupload error: %s", err)
+				} else {
+					fumtx.Lock()
+					DeletedContainer.UpdatedDDLLinks = append(DeletedContainer.UpdatedDDLLinks, ddllink)
+					DeletedContainer.UpdatedRGLinks = append(DeletedContainer.UpdatedRGLinks, rglink)
+					fumtx.Unlock()
 				}
-				DeletedContainer.UpdatedDDLLinks = append(DeletedContainer.UpdatedDDLLinks, ddllink)
-				DeletedContainer.UpdatedRGLinks = append(DeletedContainer.UpdatedRGLinks, rglink)
 
-				err = os.Remove(tempfilepath)
-
-				if err != nil {
+				if err := os.Remove(tempfilepath); err != nil {
 					fmt.Println(err)
 					errCh <- err
 				}
-				currentuploads -= 1
 			}()
-			fcwg.Add(1)
-			currentuploads += 1
 		}
 	}
+
 	fcwg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
